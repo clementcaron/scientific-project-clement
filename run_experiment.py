@@ -1,12 +1,14 @@
 """
-Main experiment runner for comparing reasoning frameworks.
+Simplified LLM Reasoning Framework Comparison Experiment.
 """
 import os
 import sys
 import time
+import argparse
 from datetime import datetime
 from typing import Dict, List, Any, Optional
 from dotenv import load_dotenv
+from pathlib import Path
 
 # Add project root to path
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
@@ -17,26 +19,29 @@ from utils import ExperimentLogger, ExperimentResult, LLMManager
 
 
 class ExperimentRunner:
-    """Orchestrates the comparison experiment across all frameworks and tasks."""
+    """Simple experiment runner with rate limiting enabled by default."""
     
     def __init__(self, 
                  model_name: str = None,
                  temperature: float = None,
                  runs_per_task: int = None,
                  results_dir: str = "results",
-                 framework_cooldown: float = None,
-                 run_cooldown: float = None):
+                 enable_rate_limiting: bool = True):
         
         load_dotenv()
         
         # Configuration
-        self.model_name = model_name or os.getenv('DEFAULT_MODEL', 'gemini-2.0-flash-exp')
+        self.model_name = model_name or os.getenv('DEFAULT_MODEL')
         self.temperature = temperature or float(os.getenv('TEMPERATURE', 0.3))
         self.runs_per_task = runs_per_task or int(os.getenv('RUNS_PER_TASK', 3))
         
-        # Cooldown parameters for rate limiting
-        self.framework_cooldown = framework_cooldown or float(os.getenv('FRAMEWORK_COOLDOWN', 0))
-        self.run_cooldown = run_cooldown or float(os.getenv('RUN_COOLDOWN', 0))
+        # Rate limiting (ON by default)
+        if enable_rate_limiting:
+            self.framework_cooldown = 60.0  # 1 minute between frameworks
+            self.run_cooldown = 10.0        # 10 seconds between runs
+        else:
+            self.framework_cooldown = 0.0
+            self.run_cooldown = 0.0
         
         # Initialize components
         self.llm_manager = LLMManager()
@@ -48,20 +53,17 @@ class ExperimentRunner:
         self.all_tasks = self.task_generator.get_all_tasks()
         self.frameworks = AgentFactory.get_available_frameworks()
         
-        print(f"Initialized experiment with:")
+        print(f"Experiment Configuration:")
         print(f"  Model: {self.model_name}")
-        print(f"  Temperature: {self.temperature}")
         print(f"  Runs per task: {self.runs_per_task}")
-        print(f"  Framework cooldown: {self.framework_cooldown}s")
-        print(f"  Run cooldown: {self.run_cooldown}s")
-        print(f"  Frameworks: {self.frameworks}")
-        print(f"  Task types: {list(self.all_tasks.keys())}")
-        print(f"  Total tasks: {sum(len(tasks) for tasks in self.all_tasks.values())}")
+        print(f"  Rate limiting: {'ON' if enable_rate_limiting else 'OFF'}")
+        if enable_rate_limiting:
+            print(f"    Framework cooldown: {self.framework_cooldown}s")
+            print(f"    Run cooldown: {self.run_cooldown}s")
+        print(f"  Available frameworks: {len(self.frameworks)}")
+        print(f"  Available tasks: {sum(len(tasks) for tasks in self.all_tasks.values())}")
         
-        # Suggest cooldowns if none are set and using a rate-limited model
-        if self.framework_cooldown == 0 and self.run_cooldown == 0:
-            if any(term in self.model_name.lower() for term in ['gemini', 'free', 'flash']):
-                self._suggest_cooldown_settings()
+        # Note: Total experiments will be shown when the actual experiment starts
     
     def run_single_experiment(self, framework: str, task, run_number: int) -> ExperimentResult:
         """Run a single experiment: one framework on one task."""
@@ -101,6 +103,9 @@ class ExperimentRunner:
                 validation_issues=validation_issues,
                 error_message=metrics.error_message
             )
+            
+            # Save individual response
+            self.save_individual_response(result)
             
         except Exception as e:
             # Handle any unexpected errors
@@ -152,7 +157,9 @@ class ExperimentRunner:
             tasks = self.all_tasks[task_type]
             if specific_tasks:
                 tasks = [t for t in tasks if t.id in specific_tasks]
-            total_experiments += len(tasks) * len(frameworks) * self.runs_per_task
+            # Only count if there are actual tasks to run
+            if tasks:
+                total_experiments += len(tasks) * len(frameworks) * self.runs_per_task
         
         print(f"\nStarting {total_experiments} experiments...")
         print("="*60)
@@ -164,6 +171,10 @@ class ExperimentRunner:
             if specific_tasks:
                 tasks = [t for t in tasks if t.id in specific_tasks]
             
+            # Skip task types with no matching tasks
+            if not tasks:
+                continue
+                
             print(f"\nProcessing {task_type.replace('_', ' ').title()} tasks...")
             
             for task in tasks:
@@ -179,15 +190,28 @@ class ExperimentRunner:
                     
                     for run in range(1, self.runs_per_task + 1):
                         experiment_count += 1
-                        print(f"      Run {run}/{self.runs_per_task} [{experiment_count}/{total_experiments}]", end=" ")
+                        print(f"      Run {run}/{self.runs_per_task} [{experiment_count}/{total_experiments}]")
                         
                         result = self.run_single_experiment(framework, task, run)
                         results.append(result)
                         
-                        # Quick status
+                        # Display results in detail
                         status = "✓" if result.success else "✗"
                         score = f"{result.validation_score:.0f}" if result.success else "0"
-                        print(f"- {status} Score: {score}")
+                        
+                        print(f"        Status: {status} | Score: {score}/100 | Time: {result.execution_time:.1f}s | Tokens: {result.tokens_used}")
+                        
+                        # Show preview of LLM answer
+                        if result.final_answer:
+                            from tasks.validators import TaskValidator
+                            preview = TaskValidator.format_output_preview(result.final_answer, 150)
+                            print(f"        Answer: {preview}")
+                        
+                        # Show validation issues if any
+                        if result.validation_issues:
+                            print(f"        Issues: {', '.join(result.validation_issues[:2])}")
+                        
+                        print()  # Add spacing
                         
                         # Add cooldown between runs (except for the last one)
                         if run < self.runs_per_task and self.run_cooldown > 0:
@@ -210,23 +234,27 @@ class ExperimentRunner:
         json_file = self.logger.save_results_json()
         csv_file = self.logger.save_results_csv()
         summary_file = self.logger.save_summary_report()
+        validation_summary = self.save_validation_summary(results)
         
         print(f"  JSON results: {json_file}")
         print(f"  CSV summary: {csv_file}")
         print(f"  Summary report: {summary_file}")
+        print(f"  Individual responses: results/responses/ ({len(results)} files)")
+        print(f"  Validation summary: {validation_summary}")
         
         # Print summary to console
         self.logger.print_summary()
     
     def run_quick_test(self) -> List[ExperimentResult]:
-        """Run a quick test with just one task per type and one run."""
-        print("Running quick test (1 task per type, 1 run each)...")
+        """Run a quick test with one task from each type (3 frameworks × 3 tasks = 9 experiments)."""
+        print("Running quick test (3 frameworks × 3 task types = 9 experiments total)")
+        print("Testing one task from each type:")
+        print("  • code_001 (Conway's Game of Life)")
+        print("  • itin_001 (European City Tour)")
+        print("  • proc_001 (Software Deployment Process)")
         
-        # Select first task from each type
-        quick_tasks = []
-        for task_type, tasks in self.all_tasks.items():
-            if tasks:
-                quick_tasks.append(tasks[0].id)
+        # Select one task from each type for comprehensive testing
+        quick_tasks = ["code_001", "itin_001", "proc_001"]
         
         # Temporarily set runs to 1
         original_runs = self.runs_per_task
@@ -269,100 +297,205 @@ class ExperimentRunner:
             # Default suggestions based on API
             if "gemini" in error_lower or "google" in error_lower:
                 return 60.0  # Google free tier: 10 requests per minute
-            elif "openai" in error_lower:
-                return 20.0  # OpenAI rate limits vary
-            elif "mistral" in error_lower:
-                return 30.0  # Mistral rate limits
             else:
                 return 60.0  # Conservative default
         
         return None
     
-    def _suggest_cooldown_settings(self):
-        """Suggest cooldown settings based on the model being used."""
-        suggestions = {
-            'gemini-2.0-flash-exp': {'framework': 60, 'run': 10, 'reason': 'Free tier: 10 requests/minute'},
-            'gemini-1.5-pro': {'framework': 30, 'run': 5, 'reason': 'Paid tier with moderate limits'},
-            'gpt-3.5-turbo': {'framework': 20, 'run': 3, 'reason': 'OpenAI tier 1 limits'},
-            'gpt-4': {'framework': 60, 'run': 10, 'reason': 'GPT-4 stricter limits'},
-            'mistral-small': {'framework': 30, 'run': 5, 'reason': 'Mistral API limits'}
-        }
+    def save_individual_response(self, result: ExperimentResult) -> str:
+        """Save individual LLM response to a separate file."""
+        # Create responses directory
+        responses_dir = Path("results/responses")
+        responses_dir.mkdir(exist_ok=True)
         
-        model_suggestion = suggestions.get(self.model_name)
-        if model_suggestion:
-            print(f"\n💡 Suggested cooldown settings for {self.model_name}:")
-            print(f"   --framework-cooldown {model_suggestion['framework']} --run-cooldown {model_suggestion['run']}")
-            print(f"   Reason: {model_suggestion['reason']}")
-        else:
-            print(f"\n💡 For rate limiting, try: --framework-cooldown 60 --run-cooldown 10")
+        # Create filename with timestamp, framework, task, and run
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"{timestamp}_{result.framework}_{result.task_id}_run{result.run_number}.txt"
+        filepath = responses_dir / filename
+        
+        # Prepare content
+        content = f"""LLM Response Analysis
+====================
+Timestamp: {result.timestamp}
+Framework: {result.framework}
+Task ID: {result.task_id}
+Task Type: {result.task_type}
+Run Number: {result.run_number}
+Model: {self.model_name}
+Success: {result.success}
+Execution Time: {result.execution_time:.2f}s
+Tokens Used: {result.tokens_used}
+Validation Score: {result.validation_score}/100
+Validation Passed: {result.validation_passed}
+
+Validation Issues:
+{chr(10).join(f"- {issue}" for issue in result.validation_issues) if result.validation_issues else "None"}
+
+Reasoning Steps:
+{"=" * 50}
+{chr(10).join(f"Step {i+1}: {step}" for i, step in enumerate(result.intermediate_steps))}
+
+Final Answer:
+{"=" * 50}
+{result.final_answer}
+
+Error Message (if any):
+{"=" * 50}
+{result.error_message or "None"}
+"""
+        
+        # Write to file
+        with open(filepath, 'w', encoding='utf-8') as f:
+            f.write(content)
+        
+        return str(filepath)
+
+    def save_validation_summary(self, results: List[ExperimentResult]) -> str:
+        """Save a comprehensive validation summary across all experiments."""
+        responses_dir = Path("results/responses")
+        responses_dir.mkdir(exist_ok=True)
+        
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        summary_file = responses_dir / f"validation_summary_{timestamp}.txt"
+        
+        # Group results by framework
+        frameworks = {}
+        for result in results:
+            if result.framework not in frameworks:
+                frameworks[result.framework] = []
+            frameworks[result.framework].append(result)
+        
+        content = f"""Validation Summary Report
+=========================
+Generated: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
+Total Experiments: {len(results)}
+Model Used: {self.model_name}
+
+Overall Statistics:
+------------------
+Success Rate: {sum(1 for r in results if r.success) / len(results) * 100:.1f}%
+Average Execution Time: {sum(r.execution_time for r in results) / len(results):.2f}s
+Average Tokens Used: {sum(r.tokens_used for r in results) / len(results):.0f}
+Average Validation Score: {sum(r.validation_score for r in results) / len(results):.1f}/100
+Validation Pass Rate: {sum(1 for r in results if r.validation_passed) / len(results) * 100:.1f}%
+
+Framework Comparison:
+====================
+"""
+        
+        for framework, framework_results in frameworks.items():
+            avg_score = sum(r.validation_score for r in framework_results) / len(framework_results)
+            avg_time = sum(r.execution_time for r in framework_results) / len(framework_results)
+            avg_tokens = sum(r.tokens_used for r in framework_results) / len(framework_results)
+            pass_rate = sum(1 for r in framework_results if r.validation_passed) / len(framework_results) * 100
+            
+            content += f"""
+{framework.upper()} Framework:
+{"-" * (len(framework) + 11)}
+• Experiments: {len(framework_results)}
+• Average Score: {avg_score:.1f}/100
+• Pass Rate: {pass_rate:.1f}%
+• Average Time: {avg_time:.2f}s
+• Average Tokens: {avg_tokens:.0f}
+• Common Issues: {", ".join(set(issue for r in framework_results for issue in r.validation_issues)) or "None"}
+"""
+        
+        content += f"""
+
+Detailed Results:
+================
+"""
+        
+        for result in results:
+            content += f"""
+{result.framework.upper()} - {result.task_id} - Run {result.run_number}:
+• Score: {result.validation_score}/100 | Pass: {result.validation_passed} | Time: {result.execution_time:.2f}s
+• Issues: {", ".join(result.validation_issues) if result.validation_issues else "None"}
+• Answer Length: {len(result.final_answer)} characters
+• Steps: {result.reasoning_steps}
+"""
+        
+        # Write to file
+        with open(summary_file, 'w', encoding='utf-8') as f:
+            f.write(content)
+        
+        return str(summary_file)
 
 def main():
-    """Main entry point for the experiment."""
-    print("LLM Reasoning Framework Comparison Experiment")
+    """Simplified main entry point."""
+    print("🧠 LLM Reasoning Framework Comparison")
     print("=" * 50)
     
-    # Check for command line arguments
-    import argparse
-    parser = argparse.ArgumentParser(description='Run LLM reasoning framework comparison')
-    parser.add_argument('--model', type=str, help='Model to use (default from .env)')
-    parser.add_argument('--temperature', type=float, help='Temperature setting (default from .env)')
-    parser.add_argument('--runs', type=int, help='Runs per task (default from .env)')
-    parser.add_argument('--framework-cooldown', type=float, help='Cooldown between frameworks in seconds (default from .env)')
-    parser.add_argument('--run-cooldown', type=float, help='Cooldown between runs in seconds (default from .env)')
-    parser.add_argument('--quick', action='store_true', help='Run quick test instead of full experiment')
-    parser.add_argument('--frameworks', nargs='+', help='Specific frameworks to test')
-    parser.add_argument('--task-types', nargs='+', help='Specific task types to test')
-    parser.add_argument('--rate-limited', action='store_true', help='Use rate-limited settings (60s framework cooldown)')
+    parser = argparse.ArgumentParser(
+        description='Compare ReAct, CoT, and ToT frameworks across 3 task types',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  python run_experiment.py --quick          # Quick test (9 experiments: all frameworks × 3 task types)
+  python run_experiment.py                  # Full experiment (9 runs with 3x repetition) 
+  python run_experiment.py --no-limit       # Disable rate limiting
+  python run_experiment.py --runs 1         # Single run per task
+        """
+    )
+    
+    parser.add_argument('--model', type=str, help='LLM model to use')
+    parser.add_argument('--temperature', type=float, help='Temperature (0.0-1.0)')
+    parser.add_argument('--runs', type=int, help='Runs per framework per task')
+    parser.add_argument('--quick', action='store_true', help='Quick test (9 experiments: all frameworks on all 3 task types)')
+    parser.add_argument('--no-limit', action='store_true', help='Disable rate limiting')
+    parser.add_argument('--frameworks', nargs='+', choices=['react', 'cot', 'tot'], help='Specific frameworks')
     
     args = parser.parse_args()
     
-    # Handle rate-limited preset
-    framework_cooldown = args.framework_cooldown
-    run_cooldown = args.run_cooldown
+    # Handle quick mode
+    runs = 1 if args.quick else (args.runs or 3)
     
-    if args.rate_limited:
-        framework_cooldown = framework_cooldown or 60.0  # 1 minute between frameworks
-        run_cooldown = run_cooldown or 10.0  # 10 seconds between runs
-        print("🐌 Rate-limited mode enabled (60s framework cooldown, 10s run cooldown)")
+    # Rate limiting (ON by default, disabled with --no-limit)
+    enable_rate_limiting = not args.no_limit
+    
+    if enable_rate_limiting:
+        print("🐌 Rate limiting: ON (60s between frameworks, 10s between runs)")
+        print("   Use --no-limit to disable")
+    else:
+        print("⚡ Rate limiting: OFF")
     
     # Initialize runner
     runner = ExperimentRunner(
         model_name=args.model,
-        temperature=args.temperature, 
-        runs_per_task=args.runs,
-        framework_cooldown=framework_cooldown,
-        run_cooldown=run_cooldown
+        temperature=args.temperature,
+        runs_per_task=runs,
+        enable_rate_limiting=enable_rate_limiting
     )
     
     try:
         # Run experiment
-        if args.quick:
+        if args.frameworks:
+            print(f"\n🎯 Testing specific frameworks: {args.frameworks}")
+            results = runner.run_framework_comparison(frameworks=args.frameworks)
+        elif args.quick:
+            print(f"\n🚀 Running quick test...")
             results = runner.run_quick_test()
-        elif args.frameworks or args.task_types:
-            results = runner.run_framework_comparison(
-                frameworks=args.frameworks,
-                task_types=args.task_types
-            )
         else:
-            results = runner.run_full_experiment()
+            print(f"\n🚀 Running full experiment...")
+            results = runner.run_framework_comparison()
         
-        # Save results
+        # Save and summarize results
         runner.save_results(results)
-        
-        print(f"\nExperiment completed successfully!")
-        print(f"Total results: {len(results)}")
+        print(f"\n✅ Experiment completed: {len(results)} results")
+        print(f"📁 Results saved to: results/")
+        print(f"📊 Open experiment.ipynb for detailed analysis")
         
     except KeyboardInterrupt:
-        print("\nExperiment interrupted by user.")
-        if runner.logger.results:
-            print("Saving partial results...")
+        print("\n⏹️  Experiment interrupted by user")
+        if hasattr(runner, 'logger') and runner.logger.results:
             runner.save_results(runner.logger.results)
+            print("💾 Partial results saved")
     except Exception as e:
-        print(f"\nExperiment failed with error: {e}")
-        if runner.logger.results:
-            print("Saving partial results...")
+        print(f"\n❌ Experiment failed: {e}")
+        if hasattr(runner, 'logger') and runner.logger.results:
             runner.save_results(runner.logger.results)
-        raise
+            print("💾 Partial results saved")
+        sys.exit(1)
 
 
 if __name__ == "__main__":

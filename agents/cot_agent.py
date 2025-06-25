@@ -116,10 +116,10 @@ Let's work through this systematically:
         """Extract the final solution from CoT response."""
         # Look for "Final Solution:" or similar patterns
         final_patterns = [
-            r"Final Solution:\s*(.*?)(?:\n|$)",
-            r"Final Answer:\s*(.*?)(?:\n|$)",
-            r"Solution:\s*(.*?)(?:\n|$)",
-            r"Answer:\s*(.*?)(?:\n|$)"
+            r"Final Solution:\s*(.*?)(?=\n\w+:|$)",
+            r"Final Answer:\s*(.*?)(?=\n\w+:|$)",
+            r"Solution:\s*(.*?)(?=\n\w+:|$)",
+            r"Answer:\s*(.*?)(?=\n\w+:|$)"
         ]
         
         for pattern in final_patterns:
@@ -127,11 +127,17 @@ Let's work through this systematically:
             if match:
                 return match.group(1).strip()
         
-        # If no explicit final answer, return the last meaningful section
+        # If no explicit final answer, look for the last substantial content
         lines = response.strip().split('\n')
+        
+        # Try to find code blocks or substantial content at the end
+        result_lines = []
         for line in reversed(lines):
             line = line.strip()
-            if line and not line.lower().startswith('step'):
-                return line
+            if not line:
+                continue
+            if line.lower().startswith('step'):
+                break
+            result_lines.insert(0, line)
         
-        return lines[-1] if lines else ""
+        return '\n'.join(result_lines) if result_lines else (lines[-1] if lines else "")

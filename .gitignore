@@ -10,8 +10,9 @@ __pycache__/
 # Ignore virtual environment directories
 .venv/
 
-# Ignore environment variable files
+# Ignore environment variable files (but keep template)
 .env
+!.env.template
 
 # Ignore log files
 *.log

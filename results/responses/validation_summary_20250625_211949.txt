@@ -1,0 +1,101 @@
+Validation Summary Report
+=========================
+Generated: 2025-06-25 21:19:49
+Total Experiments: 9
+Model Used: gemini-2.0-flash-lite
+
+Overall Statistics:
+------------------
+Success Rate: 100.0%
+Average Execution Time: 9.61s
+Average Tokens Used: 1970
+Average Validation Score: 90.3/100
+Validation Pass Rate: 88.9%
+
+Framework Comparison:
+====================
+
+REACT Framework:
+----------------
+• Experiments: 3
+• Average Score: 83.0/100
+• Pass Rate: 66.7%
+• Average Time: 7.38s
+• Average Tokens: 1526
+• Common Issues: Missing cities: ['berlin'], Missing responsibility assignments
+
+COT Framework:
+--------------
+• Experiments: 3
+• Average Score: 92.0/100
+• Pass Rate: 100.0%
+• Average Time: 11.20s
+• Average Tokens: 2266
+• Common Issues: None
+
+TOT Framework:
+--------------
+• Experiments: 3
+• Average Score: 96.0/100
+• Pass Rate: 100.0%
+• Average Time: 10.25s
+• Average Tokens: 2118
+• Common Issues: Missing cities: ['berlin']
+
+
+Detailed Results:
+================
+
+REACT - code_001 - Run 1:
+• Score: 100/100 | Pass: True | Time: 8.25s
+• Issues: None
+• Answer Length: 1657 characters
+• Steps: 3
+
+COT - code_001 - Run 1:
+• Score: 100/100 | Pass: True | Time: 9.41s
+• Issues: None
+• Answer Length: 797 characters
+• Steps: 6
+
+TOT - code_001 - Run 1:
+• Score: 100/100 | Pass: True | Time: 7.08s
+• Issues: None
+• Answer Length: 1699 characters
+• Steps: 15
+
+REACT - itin_001 - Run 1:
+• Score: 100/100 | Pass: True | Time: 12.47s
+• Issues: Missing cities: ['berlin']
+• Answer Length: 2106 characters
+• Steps: 6
+
+COT - itin_001 - Run 1:
+• Score: 100/100 | Pass: True | Time: 11.83s
+• Issues: None
+• Answer Length: 7818 characters
+• Steps: 1
+
+TOT - itin_001 - Run 1:
+• Score: 100/100 | Pass: True | Time: 12.21s
+• Issues: Missing cities: ['berlin']
+• Answer Length: 1360 characters
+• Steps: 16
+
+REACT - proc_001 - Run 1:
+• Score: 49.0/100 | Pass: False | Time: 1.41s
+• Issues: Missing responsibility assignments
+• Answer Length: 310 characters
+• Steps: 1
+
+COT - proc_001 - Run 1:
+• Score: 76.0/100 | Pass: True | Time: 12.36s
+• Issues: None
+• Answer Length: 1768 characters
+• Steps: 1
+
+TOT - proc_001 - Run 1:
+• Score: 88.0/100 | Pass: True | Time: 11.47s
+• Issues: None
+• Answer Length: 4953 characters
+• Steps: 17

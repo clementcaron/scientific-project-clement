@@ -131,7 +131,7 @@ Begin exploration:
     def _extract_final_answer(self, response: str) -> str:
         """Extract the final solution from ToT response."""
         # Look for "Final Solution:" pattern
-        final_pattern = r"Final Solution:\s*(.*?)(?:\n|$)"
+        final_pattern = r"Final Solution:\s*(.*?)(?=\n\w+:|$)"
         match = re.search(final_pattern, response, re.DOTALL | re.IGNORECASE)
         
         if match:
@@ -139,9 +139,9 @@ Begin exploration:
         
         # Alternative patterns
         alt_patterns = [
-            r"Final Answer:\s*(.*?)(?:\n|$)",
-            r"Solution:\s*(.*?)(?:\n|$)",
-            r"Complete solution:\s*(.*?)(?:\n|$)"
+            r"Final Answer:\s*(.*?)(?=\n\w+:|$)",
+            r"Solution:\s*(.*?)(?=\n\w+:|$)",
+            r"Complete solution:\s*(.*?)(?=\n\w+:|$)"
         ]
         
         for pattern in alt_patterns:
@@ -149,14 +149,20 @@ Begin exploration:
             if match:
                 return match.group(1).strip()
         
-        # If no explicit final answer, look for the last meaningful content
+        # If no explicit final answer, look for the last substantial content
         lines = response.strip().split('\n')
+        
+        # Try to find code blocks or substantial content at the end
+        result_lines = []
         for line in reversed(lines):
             line = line.strip()
-            if line and not line.lower().startswith(('step', 'approach')):
-                return line
+            if not line:
+                continue
+            if line.lower().startswith(('step', 'approach')):
+                break
+            result_lines.insert(0, line)
         
-        return lines[-1] if lines else ""
+        return '\n'.join(result_lines) if result_lines else (lines[-1] if lines else "")
     
     def _extract_approach_scores(self, response: str) -> Dict[int, float]:
         """Extract scores for each approach (if provided)."""

@@ -107,12 +107,23 @@ Begin:
     
     def _extract_final_answer(self, response: str) -> str:
         """Extract the final answer from ReAct response."""
-        final_answer_pattern = r"Final Answer:\s*(.*?)(?:\n|$)"
+        final_answer_pattern = r"Final Answer:\s*(.*?)(?=\n\w+:|$)"
         match = re.search(final_answer_pattern, response, re.DOTALL | re.IGNORECASE)
         
         if match:
             return match.group(1).strip()
         
-        # If no "Final Answer" found, return the last part of the response
+        # If no "Final Answer" found, look for the last substantial content
         lines = response.strip().split('\n')
-        return lines[-1] if lines else ""
+        
+        # Try to find code blocks or substantial content at the end
+        result_lines = []
+        for line in reversed(lines):
+            line = line.strip()
+            if not line:
+                continue
+            if line.lower().startswith(('thought:', 'action:', 'observation:')):
+                break
+            result_lines.insert(0, line)
+        
+        return '\n'.join(result_lines) if result_lines else (lines[-1] if lines else "")
