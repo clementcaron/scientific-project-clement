@@ -1,0 +1,68 @@
+timestamp,framework,task_id,task_type,run_number,success,tokens_used,execution_time,memory_usage,reasoning_steps,final_answer,validation_score,validation_passed,error_message
+2025-06-25T17:14:32.264424,react,code_001,code_generation,1,True,1993,13.265015840530396,1.265625,4,```python,0.0,False,
+2025-06-25T17:14:45.543811,cot,code_001,code_generation,1,True,1917,38.19780111312866,0.0390625,5,```,0.0,False,
+2025-06-25T17:15:23.746210,tot,code_001,code_generation,1,False,0,2.1694869995117188,0.00390625,0,,20.0,False,"429 You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. [violations {
+  quota_metric: ""generativelanguage.googleapis.com/generate_content_free_tier_requests""
+  quota_id: ""GenerateRequestsPerMinutePerProjectPerModel-FreeTier""
+  quota_dimensions {
+    key: ""model""
+    value: ""gemini-2.0-flash-exp""
+  }
+  quota_dimensions {
+    key: ""location""
+    value: ""global""
+  }
+  quota_value: 10
+}
+, links {
+  description: ""Learn more about Gemini API quotas""
+  url: ""https://ai.google.dev/gemini-api/docs/rate-limits""
+}
+, retry_delay {
+  seconds: 34
+}
+]"
+2025-06-25T17:15:25.917351,react,itin_001,itinerary_planning,1,False,0,2.1235086917877197,0.015625,0,,0.0,False,"429 You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. [violations {
+  quota_metric: ""generativelanguage.googleapis.com/generate_content_free_tier_requests""
+  quota_id: ""GenerateRequestsPerMinutePerProjectPerModel-FreeTier""
+  quota_dimensions {
+    key: ""model""
+    value: ""gemini-2.0-flash-exp""
+  }
+  quota_dimensions {
+    key: ""location""
+    value: ""global""
+  }
+  quota_value: 10
+}
+, links {
+  description: ""Learn more about Gemini API quotas""
+  url: ""https://ai.google.dev/gemini-api/docs/rate-limits""
+}
+, retry_delay {
+  seconds: 32
+}
+]"
+2025-06-25T17:15:28.042484,cot,itin_001,itinerary_planning,1,False,0,2.1500861644744873,0.14453125,0,,0.0,False,"429 You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. [violations {
+  quota_metric: ""generativelanguage.googleapis.com/generate_content_free_tier_requests""
+  quota_id: ""GenerateRequestsPerMinutePerProjectPerModel-FreeTier""
+  quota_dimensions {
+    key: ""model""
+    value: ""gemini-2.0-flash-exp""
+  }
+  quota_dimensions {
+    key: ""location""
+    value: ""global""
+  }
+  quota_value: 10
+}
+, links {
+  description: ""Learn more about Gemini API quotas""
+  url: ""https://ai.google.dev/gemini-api/docs/rate-limits""
+}
+, retry_delay {
+  seconds: 30
+}
+]"
+2025-06-25T17:15:30.194161,tot,itin_001,itinerary_planning,1,True,2509,39.22933745384216,0.2890625,14,**7-Day European Tour Itinerary (London - Paris - Amsterdam - Berlin - London)**,60.0,True,
+2025-06-25T17:16:09.425473,react,proc_001,procedure_structuring,1,True,2564,14.508550882339478,0.50390625,4,**Pre-Deployment Checklist:**,0.0,False,

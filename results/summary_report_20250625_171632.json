@@ -1,0 +1,51 @@
+{
+  "total_experiments": 7,
+  "success_rate": 0.5714285714285714,
+  "avg_validation_score": 11.428571428571429,
+  "avg_execution_time": 15.949112449373517,
+  "avg_tokens_used": 1283.2857142857142,
+  "avg_reasoning_steps": 3.857142857142857,
+  "framework_stats": {
+    "react": {
+      "success_rate": 0.6666666666666666,
+      "avg_validation_score": 0.0,
+      "avg_execution_time": 9.965691804885864,
+      "avg_tokens_used": 1519.0,
+      "avg_reasoning_steps": 2.6666666666666665
+    },
+    "cot": {
+      "success_rate": 0.5,
+      "avg_validation_score": 0.0,
+      "avg_execution_time": 20.173943638801575,
+      "avg_tokens_used": 958.5,
+      "avg_reasoning_steps": 2.5
+    },
+    "tot": {
+      "success_rate": 0.5,
+      "avg_validation_score": 40.0,
+      "avg_execution_time": 20.69941222667694,
+      "avg_tokens_used": 1254.5,
+      "avg_reasoning_steps": 7.0
+    }
+  },
+  "task_type_stats": {
+    "code_generation": {
+      "success_rate": 0.6666666666666666,
+      "avg_validation_score": 6.666666666666667,
+      "avg_execution_time": 17.877434651056927,
+      "avg_tokens_used": 1303.3333333333333
+    },
+    "itinerary_planning": {
+      "success_rate": 0.3333333333333333,
+      "avg_validation_score": 20.0,
+      "avg_execution_time": 14.500977436701456,
+      "avg_tokens_used": 836.3333333333334
+    },
+    "procedure_structuring": {
+      "success_rate": 1.0,
+      "avg_validation_score": 0.0,
+      "avg_execution_time": 14.508550882339478,
+      "avg_tokens_used": 2564.0
+    }
+  }
+}
