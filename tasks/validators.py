@@ -1,181 +1,426 @@
 """
-Task validation utilities for checking correctness of outputs.
+Task validation utilities for checking correctness of outputs using reference-based scoring.
 """
 import re
 import ast
-from typing import Dict, List, Any, Tuple
+import os
+from typing import Dict, List, Any, Tuple, Set
 from .task_definitions import Task
 
 
-class TaskValidator:
-    """Validates task outputs against criteria."""
+class ReferenceBasedValidator:
+    """Validates task outputs against gold standard references with discriminative scoring."""
     
-    @staticmethod
-    def validate_code_generation(task: Task, output: str) -> Tuple[bool, List[str], float]:
-        """Validate code generation task output."""
+    def __init__(self):
+        """Initialize validator and load reference outputs."""
+        self._load_references()
+    
+    def _load_references(self):
+        """Load the gold standard reference outputs."""
+        base_dir = os.path.dirname(os.path.dirname(__file__))
+        
+        # Load reference code
+        try:
+            with open(os.path.join(base_dir, 'best_code.py'), 'r') as f:
+                self.reference_code = f.read()
+        except FileNotFoundError:
+            self.reference_code = ""
+            
+        # Load reference itinerary
+        try:
+            with open(os.path.join(base_dir, 'best_itinerary.md'), 'r') as f:
+                self.reference_itinerary = f.read()
+        except FileNotFoundError:
+            self.reference_itinerary = ""
+            
+        # Load reference procedure
+        try:
+            with open(os.path.join(base_dir, 'best_procedure.md'), 'r') as f:
+                self.reference_procedure = f.read()
+        except FileNotFoundError:
+            self.reference_procedure = ""
+    
+    def _extract_code_features(self, code_text: str) -> Dict[str, Any]:
+        """Extract structural and semantic features from code."""
+        features = {
+            'has_main_guard': '__name__ == "__main__"' in code_text,
+            'has_grid_class': False,
+            'has_step_method': False,
+            'has_neighbor_counting': False,
+            'has_proper_rules': False,
+            'has_display_method': False,
+            'has_command_line_args': False,
+            'has_type_hints': False,
+            'has_docstrings': False,
+            'syntactically_valid': False,
+            'class_count': 0,
+            'method_count': 0,
+            'line_count': len(code_text.split('\n'))
+        }
+        
+        # Check syntax validity
+        try:
+            ast.parse(code_text)
+            features['syntactically_valid'] = True
+        except SyntaxError:
+            pass
+        
+        # Analyze AST for deeper features
+        try:
+            tree = ast.parse(code_text)
+            for node in ast.walk(tree):
+                if isinstance(node, ast.ClassDef):
+                    features['class_count'] += 1
+                    if 'grid' in node.name.lower():
+                        features['has_grid_class'] = True
+                        # Check methods in Grid class
+                        for item in node.body:
+                            if isinstance(item, ast.FunctionDef):
+                                features['method_count'] += 1
+                                if 'step' in item.name.lower() or 'advance' in item.name.lower():
+                                    features['has_step_method'] = True
+                                if 'neighbor' in item.name.lower() or 'count' in item.name.lower():
+                                    features['has_neighbor_counting'] = True
+                                if 'display' in item.name.lower() or '__str__' in item.name:
+                                    features['has_display_method'] = True
+                elif isinstance(node, ast.FunctionDef):
+                    features['method_count'] += 1
+        except:
+            pass
+        
+        # Check for Game of Life rules (2,3 survival, 3 birth)
+        if re.search(r'[^0-9]2[^0-9].*3[^0-9]|[^0-9]3[^0-9].*2[^0-9]', code_text):
+            if 'neighbor' in code_text.lower() and ('live' in code_text.lower() or 'alive' in code_text.lower()):
+                features['has_proper_rules'] = True
+        
+        # Check for advanced features
+        features['has_command_line_args'] = 'argparse' in code_text or 'ArgumentParser' in code_text
+        features['has_type_hints'] = bool(re.search(r':\s*\w+\s*=|:\s*\w+\s*->', code_text))
+        features['has_docstrings'] = '"""' in code_text or "'''" in code_text
+        
+        return features
+    
+    def _score_code_against_reference(self, output: str) -> Tuple[float, List[str]]:
+        """Score code output against the reference implementation."""
         issues = []
-        score = 0.0
+        scores = {}
         
-        # Length check - adequate explanation/code
-        if len(output) < 100:
-            issues.append("Response too short - lacks detail")
-            return False, issues, 10.0
-        
-        # Check if it's valid Python code (try to find code blocks)
+        # Extract code from output (handle both raw code and markdown code blocks)
         code_blocks = re.findall(r'```python\n(.*?)\n```', output, re.DOTALL)
-        if not code_blocks:
-            # Look for any potential code (class/def/import statements)
-            if any(keyword in output for keyword in ['class ', 'def ', 'import ', 'from ']):
-                score += 20  # Has code-like content
-            else:
-                issues.append("No identifiable Python code found")
+        if code_blocks:
+            code_text = code_blocks[0]
         else:
-            # Try to parse the first code block
-            try:
-                ast.parse(code_blocks[0])
-                score += 30  # Valid syntax
-            except SyntaxError as e:
-                issues.append(f"Syntax error in code: {e}")
+            # Try to extract the main code part
+            code_text = output
         
-        # Conway's Game of Life specific validation
-        if task.id == "code_001":
-            # Check for key concepts (more lenient scoring)
-            key_concepts = {
-                'class': 25,  # Grid class
-                'neighbor': 20,  # Neighbor counting
-                'live': 15,   # Live cells
-                'dead': 10,   # Dead cells  
-                'generation': 15,  # Generation concept
-                'display': 10,  # Display method
-                'grid': 15    # Grid concept
-            }
-            
-            for concept, points in key_concepts.items():
-                if concept.lower() in output.lower():
-                    score += points
-            
-            # Look for Game of Life rules (2, 3 neighbors) - more flexible
-            rules_found = 0
-            if '2' in output and ('live' in output.lower() or 'surviv' in output.lower()):
-                rules_found += 1
-            if '3' in output and ('live' in output.lower() or 'born' in output.lower()):
-                rules_found += 1
-            
-            if rules_found >= 1:
-                score += 10  # Partial credit for understanding rules
-            if rules_found == 2:
-                score += 5   # Bonus for both rules
-            
-            # Bonus for having method names that make sense
-            method_indicators = ['def ', 'class ', 'init', 'display', 'count', 'advance']
-            methods_found = sum(1 for indicator in method_indicators if indicator in output.lower())
-            score += min(methods_found * 2, 10)  # Up to 10 bonus points
+        features = self._extract_code_features(code_text)
+        ref_features = self._extract_code_features(self.reference_code)
         
-        return score >= 50, issues, min(score, 100)  # Lowered threshold from 60 to 50
+        # Core functionality scoring (60 points total)
+        scores['syntax'] = 15 if features['syntactically_valid'] else 0
+        if not features['syntactically_valid']:
+            issues.append("Code contains syntax errors")
+        
+        scores['grid_class'] = 15 if features['has_grid_class'] else 0
+        if not features['has_grid_class']:
+            issues.append("Missing Grid class implementation")
+        
+        scores['game_rules'] = 15 if features['has_proper_rules'] else 0
+        if not features['has_proper_rules']:
+            issues.append("Game of Life rules not properly implemented")
+        
+        scores['neighbor_logic'] = 15 if features['has_neighbor_counting'] else 0
+        if not features['has_neighbor_counting']:
+            issues.append("Missing neighbor counting functionality")
+        
+        # Structure and completeness (25 points total)
+        scores['main_guard'] = 10 if features['has_main_guard'] else 0
+        if not features['has_main_guard']:
+            issues.append("Missing if __name__ == '__main__' guard")
+        
+        scores['step_method'] = 10 if features['has_step_method'] else 0
+        if not features['has_step_method']:
+            issues.append("Missing step/advance method")
+        
+        scores['display'] = 5 if features['has_display_method'] else 0
+        if not features['has_display_method']:
+            issues.append("Missing display functionality")
+        
+        # Code quality and sophistication (15 points total)
+        scores['command_args'] = 5 if features['has_command_line_args'] else 0
+        scores['type_hints'] = 5 if features['has_type_hints'] else 0  
+        scores['documentation'] = 5 if features['has_docstrings'] else 0
+        
+        # Penalty for being too short (realistic implementation should be substantial)
+        if features['line_count'] < 50:
+            scores['length_penalty'] = -10
+            issues.append("Implementation too brief for a complete solution")
+        else:
+            scores['length_penalty'] = 0
+        
+        total_score = sum(scores.values())
+        return max(0, min(100, total_score)), issues
     
-    @staticmethod
-    def validate_itinerary_planning(task: Task, output: str) -> Tuple[bool, List[str], float]:
-        """Validate itinerary planning task output."""
+    
+    def _extract_itinerary_features(self, text: str) -> Dict[str, Any]:
+        """Extract structural and content features from itinerary."""
+        features = {
+            'has_daily_structure': False,
+            'covers_all_cities': False,
+            'has_budget_breakdown': False,
+            'has_transportation': False,
+            'has_specific_times': False,
+            'has_activities': False,
+            'has_backup_plans': False,
+            'has_cost_details': False,
+            'cities_mentioned': set(),
+            'day_count': 0,
+            'word_count': len(text.split()),
+            'has_table_format': False,
+            'detail_level': 'low'
+        }
+        
+        text_lower = text.lower()
+        
+        # Check for daily structure
+        day_patterns = [r'day\s*\d+', r'day\s+one|two|three|four|five|six|seven', 
+                       r'\d+\s*[–-]\s*\w+', r'sunday|monday|tuesday|wednesday|thursday|friday|saturday']
+        features['day_count'] = sum(len(re.findall(pattern, text_lower)) for pattern in day_patterns)
+        features['has_daily_structure'] = features['day_count'] >= 6
+        
+        # Check cities
+        required_cities = ['london', 'paris', 'amsterdam', 'berlin']
+        for city in required_cities:
+            if city in text_lower:
+                features['cities_mentioned'].add(city)
+        features['covers_all_cities'] = len(features['cities_mentioned']) == len(required_cities)
+        
+        # Transportation indicators
+        transport_terms = ['train', 'eurostar', 'thalys', 'ice', 'flight', 'rail', 'plane']
+        features['has_transportation'] = any(term in text_lower for term in transport_terms)
+        
+        # Time specifications
+        time_patterns = [r'\d{1,2}:\d{2}', r'\d{1,2}\s*am|\d{1,2}\s*pm', 
+                        r'morning|afternoon|evening|night']
+        features['has_specific_times'] = any(re.search(pattern, text_lower) for pattern in time_patterns)
+        
+        # Budget and cost tracking
+        budget_indicators = ['$', '€', '£', 'cost', 'budget', 'price', 'total', 'usd', 'euro']
+        features['has_budget_breakdown'] = any(indicator in text_lower for indicator in budget_indicators)
+        cost_counts = sum(text_lower.count(indicator) for indicator in ['$', '€', '£'])
+        features['has_cost_details'] = cost_counts >= 10
+        
+        # Activities and attractions
+        activity_terms = ['museum', 'tour', 'visit', 'see', 'explore', 'walk', 'gallery', 'cathedral', 'palace']
+        features['has_activities'] = sum(text_lower.count(term) for term in activity_terms) >= 8
+        
+        # Backup plans
+        backup_indicators = ['backup', 'fallback', 'alternative', 'rain', 'weather', 'indoor']
+        features['has_backup_plans'] = any(indicator in text_lower for indicator in backup_indicators)
+        
+        # Format sophistication
+        features['has_table_format'] = '|' in text and ('---' in text or '====' in text)
+        
+        # Detail level assessment
+        if features['word_count'] > 800 and features['has_table_format']:
+            features['detail_level'] = 'high'
+        elif features['word_count'] > 400:
+            features['detail_level'] = 'medium'
+        
+        return features
+    
+    def _score_itinerary_against_reference(self, output: str) -> Tuple[float, List[str]]:
+        """Score itinerary output against the reference implementation."""
         issues = []
-        score = 0.0
+        scores = {}
         
-        # Length check
-        if len(output) < 200:
-            issues.append("Response too short - lacks detail")
-            return False, issues, 10.0
+        features = self._extract_itinerary_features(output)
+        ref_features = self._extract_itinerary_features(self.reference_itinerary)
         
-        # Structure checks
-        if any(pattern in output.lower() for pattern in ['day 1', 'day 2', 'day one', 'day two']):
-            score += 25
+        # Core requirements (50 points total)
+        scores['city_coverage'] = 15 if features['covers_all_cities'] else len(features['cities_mentioned']) * 3
+        if not features['covers_all_cities']:
+            missing = {'london', 'paris', 'amsterdam', 'berlin'} - features['cities_mentioned']
+            issues.append(f"Missing required cities: {list(missing)}")
+        
+        scores['daily_structure'] = 15 if features['has_daily_structure'] else min(features['day_count'] * 2, 10)
+        if not features['has_daily_structure']:
+            issues.append("Missing proper 7-day structure")
+        
+        scores['budget_compliance'] = 10 if features['has_budget_breakdown'] else 0
+        if not features['has_budget_breakdown']:
+            issues.append("Missing budget breakdown or cost information")
+        
+        scores['transportation'] = 10 if features['has_transportation'] else 0
+        if not features['has_transportation']:
+            issues.append("Missing transportation details")
+        
+        # Detail and sophistication (30 points total)
+        scores['time_specificity'] = 10 if features['has_specific_times'] else 0
+        if not features['has_specific_times']:
+            issues.append("Missing specific times and scheduling")
+        
+        scores['activities'] = 10 if features['has_activities'] else 0
+        if not features['has_activities']:
+            issues.append("Insufficient activity details")
+        
+        scores['cost_detail'] = 10 if features['has_cost_details'] else 0
+        if not features['has_cost_details']:
+            issues.append("Missing detailed cost breakdown")
+        
+        # Advanced features (20 points total)
+        scores['backup_plans'] = 10 if features['has_backup_plans'] else 0
+        scores['table_format'] = 5 if features['has_table_format'] else 0
+        scores['detail_level'] = {'high': 5, 'medium': 3, 'low': 0}[features['detail_level']]
+        
+        # Length penalty for insufficient detail
+        if features['word_count'] < 300:
+            scores['length_penalty'] = -15
+            issues.append("Response too brief for a complete 7-day itinerary")
         else:
-            issues.append("Missing structured daily format")
+            scores['length_penalty'] = 0
         
-        # European tour specific validation (itin_001)
-        if task.id == "itin_001":
-            required_cities = ['london', 'paris', 'amsterdam', 'berlin']
-            cities_found = sum(1 for city in required_cities if city in output.lower())
-            score += cities_found * 15  # 15 points per city
-            
-            if cities_found < len(required_cities):
-                missing = [city for city in required_cities if city not in output.lower()]
-                issues.append(f"Missing cities: {missing}")
-            
-            # Check for budget awareness
-            budget_indicators = ['$', 'cost', 'budget', 'price', 'euro', '€', 'pound', '£']
-            if any(indicator in output.lower() for indicator in budget_indicators):
-                score += 15
-            
-            # Transportation
-            transport_words = ['train', 'flight', 'travel', 'transport', 'eurostar']
-            if any(word in output.lower() for word in transport_words):
-                score += 15
-            
-            # Activities
-            activity_words = ['museum', 'tour', 'visit', 'see', 'activity', 'attraction']
-            if any(word in output.lower() for word in activity_words):
-                score += 15
-        
-        return score >= 50, issues, min(score, 100)  # Lowered threshold
+        total_score = sum(scores.values())
+        return max(0, min(100, total_score)), issues
     
-    @staticmethod
-    def validate_procedure_structuring(task: Task, output: str) -> Tuple[bool, List[str], float]:
-        """Validate procedure structuring task output."""
+    def _extract_procedure_features(self, text: str) -> Dict[str, Any]:
+        """Extract structural and content features from procedure."""
+        features = {
+            'has_numbered_steps': False,
+            'has_clear_sequence': False,
+            'has_verification_points': False,
+            'has_rollback_plan': False,
+            'has_responsibilities': False,
+            'has_backup_strategy': False,
+            'has_notification_step': False,
+            'has_documentation_step': False,
+            'step_count': 0,
+            'word_count': len(text.split()),
+            'has_code_examples': False,
+            'has_checkpoints': False,
+            'detail_level': 'low'
+        }
+        
+        text_lower = text.lower()
+        
+        # Step structure analysis
+        step_patterns = [r'step\s*\d+', r'\d+\.', r'\d+\)', r'###\s*\d+']
+        step_matches = []
+        for pattern in step_patterns:
+            step_matches.extend(re.findall(pattern, text_lower))
+        features['step_count'] = len(step_matches)
+        features['has_numbered_steps'] = features['step_count'] >= 8
+        
+        # Sequential flow indicators
+        sequence_words = ['first', 'second', 'third', 'next', 'then', 'after', 'before', 'finally']
+        features['has_clear_sequence'] = sum(text_lower.count(word) for word in sequence_words) >= 5
+        
+        # Verification and validation
+        verification_terms = ['verify', 'check', 'confirm', 'validate', 'test', 'ensure']
+        features['has_verification_points'] = sum(text_lower.count(term) for term in verification_terms) >= 3
+        
+        # Error handling and rollback
+        rollback_terms = ['rollback', 'revert', 'undo', 'restore', 'back out']
+        features['has_rollback_plan'] = any(term in text_lower for term in rollback_terms)
+        
+        # Backup and safety
+        backup_terms = ['backup', 'snapshot', 'copy', 'save', 'dump']
+        features['has_backup_strategy'] = any(term in text_lower for term in backup_terms)
+        
+        # Communication and responsibilities
+        responsibility_terms = ['responsible', 'owner', 'team', 'role', 'who', 'assign']
+        features['has_responsibilities'] = any(term in text_lower for term in responsibility_terms)
+        
+        notification_terms = ['notify', 'alert', 'inform', 'communicate', 'announce']
+        features['has_notification_step'] = any(term in text_lower for term in notification_terms)
+        
+        documentation_terms = ['document', 'record', 'log', 'changelog', 'update']
+        features['has_documentation_step'] = any(term in text_lower for term in documentation_terms)
+        
+        # Technical sophistication
+        features['has_code_examples'] = '```' in text or 'ansible' in text_lower or 'docker' in text_lower
+        
+        # Checkpoints and validation
+        checkpoint_indicators = ['checkpoint', '✅', 'confirm', 'verify']
+        features['has_checkpoints'] = any(indicator in text_lower for indicator in checkpoint_indicators)
+        
+        # Detail level assessment
+        if features['word_count'] > 600 and features['has_code_examples']:
+            features['detail_level'] = 'high'
+        elif features['word_count'] > 300:
+            features['detail_level'] = 'medium'
+        
+        return features
+    
+    def _score_procedure_against_reference(self, output: str) -> Tuple[float, List[str]]:
+        """Score procedure output against the reference implementation."""
         issues = []
-        score = 0.0
+        scores = {}
         
-        # Length check
-        if len(output) < 150:
-            issues.append("Response too short - lacks detail")
-            return False, issues, 10.0
+        features = self._extract_procedure_features(output)
+        ref_features = self._extract_procedure_features(self.reference_procedure)
         
-        # Step structure
-        step_patterns = [
-            r'step\s*\d+',
-            r'\d+\.',
-            r'[a-z]\)',
-            r'first|second|third|next|then|finally'
-        ]
+        # Core structure (40 points total)
+        scores['step_structure'] = 15 if features['has_numbered_steps'] else min(features['step_count'] * 1.5, 10)
+        if not features['has_numbered_steps']:
+            issues.append("Missing clear numbered step structure")
         
-        if any(re.search(pattern, output.lower()) for pattern in step_patterns):
-            score += 30
+        scores['sequence_flow'] = 10 if features['has_clear_sequence'] else 0
+        if not features['has_clear_sequence']:
+            issues.append("Missing clear sequential flow indicators")
+        
+        scores['verification'] = 15 if features['has_verification_points'] else 0
+        if not features['has_verification_points']:
+            issues.append("Missing verification and validation steps")
+        
+        # Safety and error handling (30 points total)
+        scores['backup_strategy'] = 10 if features['has_backup_strategy'] else 0
+        if not features['has_backup_strategy']:
+            issues.append("Missing backup strategy")
+        
+        scores['rollback_plan'] = 15 if features['has_rollback_plan'] else 0
+        if not features['has_rollback_plan']:
+            issues.append("Missing rollback/recovery plan")
+        
+        scores['checkpoints'] = 5 if features['has_checkpoints'] else 0
+        
+        # Communication and governance (20 points total)
+        scores['responsibilities'] = 5 if features['has_responsibilities'] else 0
+        scores['notification'] = 10 if features['has_notification_step'] else 0
+        if not features['has_notification_step']:
+            issues.append("Missing team notification step")
+        
+        scores['documentation'] = 5 if features['has_documentation_step'] else 0
+        
+        # Technical sophistication (10 points total)
+        scores['code_examples'] = 5 if features['has_code_examples'] else 0
+        scores['detail_level'] = {'high': 5, 'medium': 3, 'low': 0}[features['detail_level']]
+        
+        # Length penalty for insufficient detail
+        if features['word_count'] < 200:
+            scores['length_penalty'] = -15
+            issues.append("Response too brief for a complete deployment procedure")
         else:
-            issues.append("Missing clear step structure")
+            scores['length_penalty'] = 0
         
-        # Software deployment specific (proc_001)
-        if task.id == "proc_001":
-            required_elements = {
-                'backup': 15,
-                'test': 15, 
-                'migration': 15,
-                'rollback': 15,
-                'notify': 10,
-                'documentation': 10,
-                'production': 10,
-                'deploy': 10
-            }
-            
-            for element, points in required_elements.items():
-                if element in output.lower():
-                    score += points
-        
-        # Check for responsibility assignment
-        responsibility_words = ['responsible', 'assign', 'role', 'who', 'team', 'owner']
-        if any(word in output.lower() for word in responsibility_words):
-            score += 10
-        
-        return score >= 50, issues, min(score, 100)  # Lowered threshold
+        total_score = sum(scores.values())
+        return max(0, min(100, total_score)), issues
     
-    @classmethod
-    def validate_task_output(cls, task: Task, output: str) -> Tuple[bool, List[str], float]:
-        """Validate task output based on task type."""
+    
+    def validate_task_output(self, task: Task, output: str) -> Tuple[bool, List[str], float]:
+        """Validate task output based on task type using reference-based scoring."""
         if task.task_type == "code_generation":
-            return cls.validate_code_generation(task, output)
+            score, issues = self._score_code_against_reference(output)
         elif task.task_type == "itinerary_planning":
-            return cls.validate_itinerary_planning(task, output)
+            score, issues = self._score_itinerary_against_reference(output)
         elif task.task_type == "procedure_structuring":
-            return cls.validate_procedure_structuring(task, output)
+            score, issues = self._score_procedure_against_reference(output)
         else:
             return False, ["Unknown task type"], 0.0
+        
+        # More stringent pass threshold - only truly good outputs should pass
+        is_valid = score >= 70  # Raised from 50 to make scoring more discriminative
+        return is_valid, issues, score
     
     @staticmethod
     def format_output_preview(output: str, max_length: int = 200) -> str:
@@ -193,105 +438,21 @@ class TaskValidator:
             return output[:break_point + 1] + "..."
         else:
             return truncated + "..."
-        if task.id == "itin_001":  # European tour
-            required_cities = ["london", "paris", "amsterdam", "berlin"]
-            cities_found = sum(1 for city in required_cities if city in output.lower())
-            score += cities_found * 10
-            
-            if cities_found < len(required_cities):
-                missing = [city for city in required_cities if city not in output.lower()]
-                issues.append(f"Missing cities: {missing}")
-        
-        elif task.id == "itin_002":  # Business trip
-            required_cities = ["new york", "philadelphia", "washington"]
-            cities_found = sum(1 for city in required_cities if city in output.lower())
-            score += cities_found * 10
-            
-            if "meeting" in output.lower():
-                score += 15
-            else:
-                issues.append("Missing meeting accommodations")
-        
-        elif task.id == "itin_003":  # Family vacation
-            if "disney" in output.lower():
-                score += 10
-            if "universal" in output.lower():
-                score += 10
-            if "allerg" in output.lower():
-                score += 15
-            else:
-                issues.append("Didn't address food allergies")
-        
-        # Check for time specifications
-        if re.search(r'\d+:\d+|morning|afternoon|evening', output.lower()):
-            score += 15
-        else:
-            issues.append("Missing time specifications")
-        
-        return score >= 60, issues, score
+
+
+# Create a singleton instance for backward compatibility
+task_validator = ReferenceBasedValidator()
+
+
+class TaskValidator:
+    """Legacy wrapper for backward compatibility."""
     
     @staticmethod
-    def validate_procedure_structuring(task: Task, output: str) -> Tuple[bool, List[str], float]:
-        """Validate procedure structuring task output."""
-        issues = []
-        score = 0.0
-        
-        # Check for numbered or structured steps
-        step_patterns = [
-            r'step\s*\d+',
-            r'\d+\.',
-            r'[a-z]\)',
-            r'first|second|third|next|then|finally'
-        ]
-        
-        if any(re.search(pattern, output.lower()) for pattern in step_patterns):
-            score += 25
-        else:
-            issues.append("Missing clear step structure")
-        
-        # Check for logical flow indicators
-        flow_words = ["after", "before", "once", "when", "if", "then", "next"]
-        flow_count = sum(1 for word in flow_words if word in output.lower())
-        score += min(flow_count * 3, 15)
-        
-        # Check for responsibility assignment
-        if any(keyword in output.lower() for keyword in ["responsible", "assign", "role", "who", "team"]):
-            score += 15
-        else:
-            issues.append("Missing responsibility assignments")
-        
-        # Task-specific validation
-        if task.id == "proc_001":  # Software deployment
-            required_elements = ["backup", "test", "migration", "rollback", "notify"]
-            elements_found = sum(1 for element in required_elements if element in output.lower())
-            score += elements_found * 6
-            
-        elif task.id == "proc_002":  # Customer onboarding
-            required_elements = ["sign up", "verify", "account", "training", "welcome"]
-            elements_found = sum(1 for element in required_elements if element in output.lower())
-            score += elements_found * 6
-            
-        elif task.id == "proc_003":  # Emergency response
-            required_elements = ["identify", "escalate", "communicate", "document", "coordinate"]
-            elements_found = sum(1 for element in required_elements if element in output.lower())
-            score += elements_found * 6
-        
-        # Check for error handling or contingencies
-        if any(keyword in output.lower() for keyword in ["if", "error", "fail", "problem", "backup", "alternative"]):
-            score += 15
-        else:
-            issues.append("Missing error handling or contingencies")
-        
-        return score >= 60, issues, score
+    def validate_task_output(task: Task, output: str) -> Tuple[bool, List[str], float]:
+        """Validate task output - delegates to reference-based validator."""
+        return task_validator.validate_task_output(task, output)
     
-    @classmethod
-    def validate_task_output(cls, task: Task, output: str) -> Tuple[bool, List[str], float]:
-        """Validate task output based on task type."""
-        if task.task_type == "code_generation":
-            return cls.validate_code_generation(task, output)
-        elif task.task_type == "itinerary_planning":
-            return cls.validate_itinerary_planning(task, output)
-        elif task.task_type == "procedure_structuring":
-            return cls.validate_procedure_structuring(task, output)
-        else:
-            return False, ["Unknown task type"], 0.0
+    @staticmethod
+    def format_output_preview(output: str, max_length: int = 200) -> str:
+        """Format output for preview display."""
+        return ReferenceBasedValidator.format_output_preview(output, max_length)

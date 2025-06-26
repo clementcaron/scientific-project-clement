@@ -104,9 +104,6 @@ class ExperimentRunner:
                 error_message=metrics.error_message
             )
             
-            # Save individual response
-            self.save_individual_response(result)
-            
         except Exception as e:
             # Handle any unexpected errors
             error_str = str(e)
@@ -228,22 +225,86 @@ class ExperimentRunner:
         return self.run_framework_comparison()
     
     def save_results(self, results: List[ExperimentResult]):
-        """Save experiment results to files."""
+        """Save experiment results to streamlined files."""
         print("\nSaving results...")
         
-        json_file = self.logger.save_results_json()
-        csv_file = self.logger.save_results_csv()
-        summary_file = self.logger.save_summary_report()
-        validation_summary = self.save_validation_summary(results)
+        # Save complete data as JSON (single file)
+        json_file = self.logger.save_results_json("experiment_results.json")
         
-        print(f"  JSON results: {json_file}")
-        print(f"  CSV summary: {csv_file}")
-        print(f"  Summary report: {summary_file}")
-        print(f"  Individual responses: results/responses/ ({len(results)} files)")
-        print(f"  Validation summary: {validation_summary}")
+        # Save summary as CSV (single file)  
+        csv_file = self.logger.save_results_csv("experiment_summary.csv")
+        
+        # Save all LLM responses in one readable file
+        responses_file = self.save_all_responses(results)
+        
+        print(f"📁 Results saved to:")
+        print(f"  📊 Complete data: {json_file}")
+        print(f"  📈 Summary: {csv_file}")
+        print(f"  💬 LLM responses: {responses_file}")
         
         # Print summary to console
         self.logger.print_summary()
+    
+    def save_all_responses(self, results: List[ExperimentResult]) -> str:
+        """Save all LLM responses in a single, organized file."""
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filepath = Path("results") / "llm_responses.txt"
+        
+        # Group results by task type for better organization
+        by_task_type = {}
+        for result in results:
+            task_type = result.task_type
+            if task_type not in by_task_type:
+                by_task_type[task_type] = []
+            by_task_type[task_type].append(result)
+        
+        content = f"""LLM Responses Analysis Report
+============================
+Generated: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
+Model: {self.model_name}
+Total Experiments: {len(results)}
+
+Quick Statistics:
+- Success Rate: {sum(1 for r in results if r.success) / len(results) * 100:.1f}%
+- Average Validation Score: {sum(r.validation_score for r in results) / len(results):.1f}/100
+- Average Execution Time: {sum(r.execution_time for r in results) / len(results):.2f}s
+- Average Tokens: {sum(r.tokens_used for r in results) / len(results):.0f}
+
+{"="*80}
+
+"""
+        
+        for task_type, task_results in by_task_type.items():
+            content += f"""
+{task_type.replace('_', ' ').title()}
+{"="*len(task_type)}
+
+"""
+            for result in task_results:
+                content += f"""
+{"-"*80}
+{result.framework.upper()} - {result.task_id} - Run {result.run_number}
+{"-"*80}
+Timestamp: {result.timestamp}
+Success: {result.success} | Score: {result.validation_score}/100 | Time: {result.execution_time:.2f}s | Tokens: {result.tokens_used}
+Validation: {"✓ PASSED" if result.validation_passed else "✗ FAILED"}
+Issues: {", ".join(result.validation_issues) if result.validation_issues else "None"}
+
+Reasoning Steps:
+{chr(10).join(f"• {step}" for step in result.intermediate_steps)}
+
+Final Answer:
+{result.final_answer}
+
+"""
+                if result.error_message:
+                    content += f"Error: {result.error_message}\n\n"
+        
+        # Write to file
+        with open(filepath, 'w', encoding='utf-8') as f:
+            f.write(content)
+        
+        return str(filepath)
     
     def run_quick_test(self) -> List[ExperimentResult]:
         """Run a quick test with one task from each type (3 frameworks × 3 tasks = 9 experiments)."""
@@ -302,125 +363,6 @@ class ExperimentRunner:
         
         return None
     
-    def save_individual_response(self, result: ExperimentResult) -> str:
-        """Save individual LLM response to a separate file."""
-        # Create responses directory
-        responses_dir = Path("results/responses")
-        responses_dir.mkdir(exist_ok=True)
-        
-        # Create filename with timestamp, framework, task, and run
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"{timestamp}_{result.framework}_{result.task_id}_run{result.run_number}.txt"
-        filepath = responses_dir / filename
-        
-        # Prepare content
-        content = f"""LLM Response Analysis
-====================
-Timestamp: {result.timestamp}
-Framework: {result.framework}
-Task ID: {result.task_id}
-Task Type: {result.task_type}
-Run Number: {result.run_number}
-Model: {self.model_name}
-Success: {result.success}
-Execution Time: {result.execution_time:.2f}s
-Tokens Used: {result.tokens_used}
-Validation Score: {result.validation_score}/100
-Validation Passed: {result.validation_passed}
-
-Validation Issues:
-{chr(10).join(f"- {issue}" for issue in result.validation_issues) if result.validation_issues else "None"}
-
-Reasoning Steps:
-{"=" * 50}
-{chr(10).join(f"Step {i+1}: {step}" for i, step in enumerate(result.intermediate_steps))}
-
-Final Answer:
-{"=" * 50}
-{result.final_answer}
-
-Error Message (if any):
-{"=" * 50}
-{result.error_message or "None"}
-"""
-        
-        # Write to file
-        with open(filepath, 'w', encoding='utf-8') as f:
-            f.write(content)
-        
-        return str(filepath)
-
-    def save_validation_summary(self, results: List[ExperimentResult]) -> str:
-        """Save a comprehensive validation summary across all experiments."""
-        responses_dir = Path("results/responses")
-        responses_dir.mkdir(exist_ok=True)
-        
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        summary_file = responses_dir / f"validation_summary_{timestamp}.txt"
-        
-        # Group results by framework
-        frameworks = {}
-        for result in results:
-            if result.framework not in frameworks:
-                frameworks[result.framework] = []
-            frameworks[result.framework].append(result)
-        
-        content = f"""Validation Summary Report
-=========================
-Generated: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
-Total Experiments: {len(results)}
-Model Used: {self.model_name}
-
-Overall Statistics:
-------------------
-Success Rate: {sum(1 for r in results if r.success) / len(results) * 100:.1f}%
-Average Execution Time: {sum(r.execution_time for r in results) / len(results):.2f}s
-Average Tokens Used: {sum(r.tokens_used for r in results) / len(results):.0f}
-Average Validation Score: {sum(r.validation_score for r in results) / len(results):.1f}/100
-Validation Pass Rate: {sum(1 for r in results if r.validation_passed) / len(results) * 100:.1f}%
-
-Framework Comparison:
-====================
-"""
-        
-        for framework, framework_results in frameworks.items():
-            avg_score = sum(r.validation_score for r in framework_results) / len(framework_results)
-            avg_time = sum(r.execution_time for r in framework_results) / len(framework_results)
-            avg_tokens = sum(r.tokens_used for r in framework_results) / len(framework_results)
-            pass_rate = sum(1 for r in framework_results if r.validation_passed) / len(framework_results) * 100
-            
-            content += f"""
-{framework.upper()} Framework:
-{"-" * (len(framework) + 11)}
-• Experiments: {len(framework_results)}
-• Average Score: {avg_score:.1f}/100
-• Pass Rate: {pass_rate:.1f}%
-• Average Time: {avg_time:.2f}s
-• Average Tokens: {avg_tokens:.0f}
-• Common Issues: {", ".join(set(issue for r in framework_results for issue in r.validation_issues)) or "None"}
-"""
-        
-        content += f"""
-
-Detailed Results:
-================
-"""
-        
-        for result in results:
-            content += f"""
-{result.framework.upper()} - {result.task_id} - Run {result.run_number}:
-• Score: {result.validation_score}/100 | Pass: {result.validation_passed} | Time: {result.execution_time:.2f}s
-• Issues: {", ".join(result.validation_issues) if result.validation_issues else "None"}
-• Answer Length: {len(result.final_answer)} characters
-• Steps: {result.reasoning_steps}
-"""
-        
-        # Write to file
-        with open(summary_file, 'w', encoding='utf-8') as f:
-            f.write(content)
-        
-        return str(summary_file)
-
 def main():
     """Simplified main entry point."""
     print("🧠 LLM Reasoning Framework Comparison")
