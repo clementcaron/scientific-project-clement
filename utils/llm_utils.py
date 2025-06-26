@@ -29,7 +29,7 @@ class LLMManager:
             model=model_name,
             google_api_key=api_key,
             temperature=kwargs.get('temperature', 0.3),
-            max_output_tokens=kwargs.get('max_tokens', 2048)
+            max_output_tokens=kwargs.get('max_tokens', 4096)
         )
     
     def create_llm(self, model_name: str, **kwargs) -> LLM:
@@ -49,5 +49,5 @@ class LLMManager:
         return {
             'model_name': os.getenv('DEFAULT_MODEL'),
             'temperature': float(os.getenv('TEMPERATURE', 0.3)),
-            'max_tokens': int(os.getenv('MAX_TOKENS', 2048))
+            'max_tokens': int(os.getenv('MAX_TOKENS', 4096))
         }
