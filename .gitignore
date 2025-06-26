@@ -13,6 +13,3 @@ __pycache__/
 # Ignore environment variable files (but keep template)
 .env
 !.env.template
-
-# Ignore log files
-*.log
