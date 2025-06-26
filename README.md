@@ -100,25 +100,21 @@ scientific-project-clement/
 
 ## 📊 Results & Evaluation
 
-### Automated Validation System
+### Validation System
 - **Reference-Based Scoring:** Compares outputs against gold standard references using multiple criteria
 - **Task-Specific Metrics:** Code validation, itinerary constraints, procedure completeness
 - **Execution Tracking:** Time, tokens used, reasoning steps, memory usage
 - **Success Rate Analysis:** Pass/fail rates across frameworks and tasks
 
-### Comprehensive Output Files
+### Output Files
 - **`experiment_results.json`** - Complete experiment data with full responses and metadata
 - **`experiment_summary.csv`** - Summary metrics for quick analysis and spreadsheet import
 - **`llm_responses.txt`** - All LLM responses in human-readable format
 - **`experiment_YYYYMMDD_HHMMSS.log`** - Detailed execution logs with timestamps
 
-### Interactive Analysis Notebook
+### Analysis Notebook
 The `experiment.ipynb` notebook provides:
 - **📈 Performance Visualizations:** Score distributions, time comparisons, success rates
-- **🎨 Custom Color Scheme:** Consistent framework colors across all plots
-  - ReAct: `#edae49` (yellow/gold)
-  - Chain-of-Thought: `#d1495b` (red/pink)  
-  - Tree-of-Thoughts: `#00798c` (teal/blue-green)
 - **📊 Statistical Analysis:** ANOVA tests, pairwise comparisons, effect sizes
 - **🔍 Response Analysis:** Length, structure, and quality correlations
 - **🏆 Framework Rankings:** Overall and task-specific performance comparisons
@@ -164,41 +160,7 @@ python run_experiment.py
 
 # Disable all rate limiting
 python run_experiment.py --no-limit
-
-# Custom delays
-python run_experiment.py --framework-cooldown 30 --run-cooldown 5
 ```
-
-## ✨ Key Features
-
-### 🎯 Focused & Clean Design
-- **Simplified Scope:** Only 3 carefully chosen tasks representing different problem domains
-- **Clear Evaluation:** Reference-based scoring with meaningful, discriminative validation
-- **No Overengineering:** Removed unnecessary complexity and extra guides
-
-### 🔧 Easy to Use & Maintain  
-- **Single Analysis Notebook:** All visualization and analysis in one place
-- **Consolidated Output:** Just 3 output files (JSON, CSV, TXT) instead of scattered results
-- **Simple Setup:** One script validation, clear documentation
-- **Rate Limit Safe:** Built-in delays prevent API quota issues
-
-### 📈 Comprehensive Analysis
-- **Automated Metrics:** Performance, efficiency, and success rates
-- **Visual Analytics:** Interactive plots with custom color schemes  
-- **Statistical Testing:** ANOVA, t-tests, effect size calculations
-- **Full Response Logging:** Complete LLM outputs for qualitative review
-
-### 🚀 Experiment Modes
-- **Quick Mode:** Fast testing with minimal API calls (9 experiments)
-- **Full Mode:** Complete evaluation with statistical power (27 experiments)  
-- **Demo Mode:** Generate mock data for testing without API calls
-- **Custom Runs:** Configurable number of runs per framework-task combination
-
-### 🎨 Rich Visualizations
-- **Consistent Color Scheme:** Each framework has dedicated colors across all plots
-- **Multiple Chart Types:** Box plots, heatmaps, scatter plots, bar charts
-- **Interactive Elements:** Plotly charts with hover details and zoom
-- **Export Ready:** High-quality plots suitable for presentations or papers
 
 ## 🔧 Troubleshooting
 
@@ -216,16 +178,7 @@ python check_setup.py
 **📈 Low Validation Scores**
 - Review full responses in `results/llm_responses.txt`
 - Check detailed validation feedback in experiment logs
-- Consider using more capable models (e.g., `gemini-1.5-pro`)
-
-**⏱️ Rate Limit Errors**  
-```bash
-# Enable rate limiting (default)
-python run_experiment.py --rate-limited
-
-# Increase delays for free tiers
-python run_experiment.py --framework-cooldown 120 --run-cooldown 30
-```
+- Consider using more capable models (e.g., `gemini-2.5-flash`)
 
 **📦 Missing Dependencies**
 ```bash
@@ -243,15 +196,6 @@ pip install jupyter jupyterlab
 
 # Restart kernel if variables seem stale
 # Kernel > Restart & Clear Output in Jupyter
-```
-
-**🗂️ File Not Found Errors**
-```bash
-# Ensure you're in the project root
-ls -la | grep experiment.ipynb
-
-# Check if results directory exists
-mkdir -p results
 ```
 
 ## 📋 Example Output
@@ -310,12 +254,4 @@ This framework is designed for:
 - **Framework Development:** Testing new reasoning methods against established baselines
 - **Educational Use:** Understanding how different reasoning strategies work in practice
 
-## 🤝 Contributing
 
-The project is designed to be easily extensible:
-- **Add Tasks:** Implement new task types in `tasks/generators.py` and `tasks/validators.py`
-- **Add Frameworks:** Create new reasoning approaches in the `agents/` directory
-- **Customize Validation:** Modify scoring criteria in the validation system
-- **Extend Analysis:** Add new visualization and analysis methods to the notebook
-
-Built for clear insights into LLM reasoning patterns across diverse problem domains. 🚀
