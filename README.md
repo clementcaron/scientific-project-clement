@@ -26,7 +26,7 @@ A clean, focused experiment comparing three reasoning frameworks (ReAct, Chain-o
 ### 1. Environment Setup
 ```bash
 # Clone and navigate to project
-git clone <repository-url>
+git clone https://github.com/clementcaron/scientific-project-clement
 cd scientific-project-clement
 
 # Install dependencies
